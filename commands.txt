@@ -1,0 +1,13 @@
+cd "E:\AI Picture review"
+
+# One local folder, first 10 images
+python main.py run --dir "C:\Users\mytho\OneDrive\Pictures\MACRO" --limit 10
+
+# Just the NAS Bugs library
+python main.py run --dir "\\VasNAS\VasNAS\Andrew\Bugs"
+
+# Multiple folders
+python main.py run --dir "C:\Users\mytho\OneDrive\Pictures\MACRO" --dir "\\VasNAS\VasNAS\Andrew\Bugs" --limit 25
+
+# Score only images already under a folder (no re-index of defaults)
+python main.py analyze --dir "\\VasNAS\VasNAS\Andrew\MACRO" --limit 5

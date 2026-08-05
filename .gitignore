@@ -1,0 +1,29 @@
+# Local analysis cache (large / regenerable)
+cache/
+suggested_crops/
+logs/
+
+# Generated reports (regenerable via `python main.py report`)
+report.html
+results.csv
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+.env.*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+
+# Scratch / temp
+_*.py
+*.log

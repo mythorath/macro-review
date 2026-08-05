@@ -1,0 +1,110 @@
+est technical companion: an IQA / aesthetic model
+
+What you want here is an Image Quality Assessment model.
+
+These are not usually run through Ollama.
+They are usually run through Python + PyTorch.
+
+Good model families to look at
+
+These are the ones I’d look at first:
+
+NIMA
+classic aesthetic scoring model
+good for “how pleasing is this image?”
+older, but simple and useful
+MUSIQ
+good no-reference image quality assessment
+useful for technical quality perception
+MANIQA
+strong modern no-reference IQA model
+good for perceptual quality
+TOPIQ
+good for technical/perceptual image quality
+HyperIQA
+another strong no-reference IQA option
+CLIP-IQA / Q-Align style approaches
+useful if you want quality aligned more with human preference or language guidance
+What these models are good at
+
+They can help score:
+
+sharpness
+blur
+noise
+exposure issues
+overall perceived quality
+aesthetic appeal
+What they are not good at
+
+They usually won’t tell you:
+
+“the left side is too heavy visually”
+“the insect’s eye should be the critical focus point”
+“this stem merging into the wing is distracting”
+
+That’s where Qwen or another VLM comes in.
+
+What I’d recommend specifically
+Best overall local setup on your 5090
+1. Use Qwen as the critique engine
+
+Ask it to analyze:
+
+composition
+focus placement
+lighting
+background separation
+subject isolation
+framing
+color harmony
+distracting elements
+edit suggestions
+2. Use one IQA model as the score engine
+
+I’d start with:
+
+MANIQA or MUSIQ for quality
+NIMA if you want aesthetic scoring too
+3. Combine them
+
+Let the IQA model give you:
+
+technical score
+aesthetic score
+
+Then let Qwen explain:
+
+why the image succeeded or failed
+
+That’s the sweet spot.
+
+For macro insect photography specifically
+
+Macro is weird, because a “good” macro photo is not always what generic photo models think is good.
+
+For insect macro, your analysis should care about:
+
+Technical macro-specific factors
+Is the eye critically sharp?
+Is the sharpness on the right body part?
+Is shallow DOF helping or hurting?
+Are important structures lost to blur?
+Is motion blur present?
+Are there focus stacking artifacts?
+Is diffraction softening detail?
+Is flash harsh or well controlled?
+Are highlights clipped on shiny shell/eyes/wings?
+Is the background smooth or distracting?
+Composition-specific factors
+Subject placement
+Viewing angle
+Clear separation from background
+Direction of subject gaze / body orientation
+Negative space
+Leading lines from stems or branches
+Whether the frame feels cramped
+Whether important appendages are cut off
+Whether the pose feels dynamic or static
+
+Generic AI often misses the eye sharpness priority, so you’ll want to prompt for that explicitly.
