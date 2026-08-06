@@ -13,6 +13,8 @@ from db import db, init_db, path_id, upsert_image
 
 def _iter_images(
     source_dirs: list[tuple[str, Path]] | None = None,
+    *,
+    recursive: bool = True,
 ) -> list[tuple[str, Path]]:
     roots = source_dirs if source_dirs is not None else config.SOURCE_DIRS
     found: list[tuple[str, Path]] = []
@@ -20,7 +22,8 @@ def _iter_images(
         if not root.exists():
             print(f"WARNING: source path missing, skipping: {root}")
             continue
-        for path in root.rglob("*"):
+        paths = root.rglob("*") if recursive else root.iterdir()
+        for path in paths:
             if not path.is_file():
                 continue
             ext = path.suffix.lower()
@@ -34,10 +37,12 @@ def _iter_images(
 
 def index_images(
     source_dirs: list[tuple[str, Path]] | None = None,
+    *,
+    recursive: bool = True,
 ) -> int:
     """Walk source dirs and upsert into SQLite. Returns count indexed."""
     init_db()
-    files = _iter_images(source_dirs)
+    files = _iter_images(source_dirs, recursive=recursive)
     now = datetime.now(timezone.utc).isoformat()
     count = 0
     with db() as conn:
@@ -61,7 +66,8 @@ def index_images(
             upsert_image(conn, row)
             count += 1
     label = ", ".join(str(p) for _, p in (source_dirs or config.SOURCE_DIRS))
-    print(f"Indexed {count} images from: {label}")
+    mode = "recursive" if recursive else "direct only"
+    print(f"Indexed {count} images from: {label} ({mode})")
     return count
 
 

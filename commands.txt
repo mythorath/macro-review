@@ -1,10 +1,16 @@
 cd "E:\AI Picture review"
 
+# One shoot folder (direct files only — does NOT enter subfolders)
+python main.py run --dir "C:\Users\mytho\OneDrive\Pictures\MACRO\Aug 4"
+
+# Same folder including subfolders
+python main.py run --dir "C:\Users\mytho\OneDrive\Pictures\MACRO\Aug 4" --recursive
+
 # One local folder, first 10 images
 python main.py run --dir "C:\Users\mytho\OneDrive\Pictures\MACRO" --limit 10
 
-# Just the NAS Bugs library
-python main.py run --dir "\\VasNAS\VasNAS\Andrew\Bugs"
+# Just the NAS Bugs library (include subfolders)
+python main.py run --dir "\\VasNAS\VasNAS\Andrew\Bugs" --recursive
 
 # Multiple folders
 python main.py run --dir "C:\Users\mytho\OneDrive\Pictures\MACRO" --dir "\\VasNAS\VasNAS\Andrew\Bugs" --limit 25

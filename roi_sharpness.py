@@ -223,7 +223,13 @@ def analyze_roi(path: Path, subject_box: list[float] | None, eye_box: list[float
     }
 
 
-def _pending(force: bool, limit: int | None, path_dirs: list[Path] | None) -> list:
+def _pending(
+    force: bool,
+    limit: int | None,
+    path_dirs: list[Path] | None,
+    *,
+    recursive: bool = True,
+) -> list:
     with db() as conn:
         if force:
             rows = fetchall(
@@ -248,7 +254,11 @@ def _pending(force: bool, limit: int | None, path_dirs: list[Path] | None) -> li
                 """,
             )
     if path_dirs:
-        rows = [r for r in rows if config.path_under_dirs(r["path"], path_dirs)]
+        rows = [
+            r
+            for r in rows
+            if config.path_under_dirs(r["path"], path_dirs, recursive=recursive)
+        ]
     if limit is not None:
         rows = rows[:limit]
     return rows
@@ -259,10 +269,11 @@ def compute_roi(
     force: bool = False,
     limit: int | None = None,
     path_dirs: list[Path] | None = None,
+    recursive: bool = True,
 ) -> int:
     """Compute ROI sharpness/composition for pending images."""
     init_db()
-    rows = _pending(force, limit, path_dirs)
+    rows = _pending(force, limit, path_dirs, recursive=recursive)
     if not rows:
         print("No images pending ROI analysis.")
         return 0

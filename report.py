@@ -34,7 +34,11 @@ def _bar(value, label: str) -> str:
     )
 
 
-def _load_scored_rows(path_dirs: list[Path] | None = None) -> list:
+def _load_scored_rows(
+    path_dirs: list[Path] | None = None,
+    *,
+    recursive: bool = True,
+) -> list:
     init_db()
     with db() as conn:
         rows = fetchall(
@@ -90,7 +94,11 @@ def _load_scored_rows(path_dirs: list[Path] | None = None) -> list:
         enriched.append(d)
 
     if path_dirs:
-        enriched = [r for r in enriched if config.path_under_dirs(r["path"], path_dirs)]
+        enriched = [
+            r
+            for r in enriched
+            if config.path_under_dirs(r["path"], path_dirs, recursive=recursive)
+        ]
     return enriched
 
 
@@ -402,8 +410,12 @@ apply();
     return config.REPORT_PATH
 
 
-def build_report(path_dirs: list[Path] | None = None) -> tuple[Path, Path]:
-    rows = _load_scored_rows(path_dirs=path_dirs)
+def build_report(
+    path_dirs: list[Path] | None = None,
+    *,
+    recursive: bool = True,
+) -> tuple[Path, Path]:
+    rows = _load_scored_rows(path_dirs=path_dirs, recursive=recursive)
     html_path = write_html(rows)
     csv_path = write_csv(rows)
     return html_path, csv_path

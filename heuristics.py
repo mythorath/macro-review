@@ -54,6 +54,7 @@ def compute_heuristics(
     force: bool = False,
     limit: int | None = None,
     path_dirs: list[Path] | None = None,
+    recursive: bool = True,
 ) -> int:
     """Compute heuristics for images with successful previews. Returns count updated."""
     init_db()
@@ -82,7 +83,11 @@ def compute_heuristics(
                 """,
             )
     if path_dirs:
-        rows = [r for r in rows if config.path_under_dirs(r["path"], path_dirs)]
+        rows = [
+            r
+            for r in rows
+            if config.path_under_dirs(r["path"], path_dirs, recursive=recursive)
+        ]
     if limit is not None:
         rows = rows[:limit]
 

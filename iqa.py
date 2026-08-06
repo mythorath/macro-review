@@ -77,6 +77,8 @@ def _images_needing_metric(
     force: bool,
     limit: int | None,
     path_dirs: list[Path] | None,
+    *,
+    recursive: bool = True,
 ) -> list:
     with db() as conn:
         if force:
@@ -106,7 +108,11 @@ def _images_needing_metric(
                 (metric_key,),
             )
     if path_dirs:
-        rows = [r for r in rows if config.path_under_dirs(r["path"], path_dirs)]
+        rows = [
+            r
+            for r in rows
+            if config.path_under_dirs(r["path"], path_dirs, recursive=recursive)
+        ]
     if limit is not None:
         rows = rows[:limit]
     return rows
@@ -180,6 +186,7 @@ def compute_iqa(
     limit: int | None = None,
     path_dirs: list[Path] | None = None,
     metrics: list[str] | None = None,
+    recursive: bool = True,
 ) -> int:
     """
     Score previews with the IQA ensemble. Each metric is resumable independently.
@@ -202,7 +209,9 @@ def compute_iqa(
             print(f"WARNING: unknown IQA metric {key!r}, skipping")
             continue
         storage_key, pyiqa_name, task, mode = registry[key]
-        rows = _images_needing_metric(storage_key, force, limit, path_dirs)
+        rows = _images_needing_metric(
+            storage_key, force, limit, path_dirs, recursive=recursive
+        )
         if not rows:
             print(f"IQA {storage_key}: nothing pending")
             continue

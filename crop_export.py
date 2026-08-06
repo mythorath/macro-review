@@ -24,6 +24,7 @@ def export_crops(
     score_threshold: float | None = None,
     limit: int | None = None,
     path_dirs: list[Path] | None = None,
+    recursive: bool = True,
 ) -> int:
     """Crop and save top crop-worthy images. Returns number exported."""
     init_db()
@@ -52,7 +53,11 @@ def export_crops(
             (threshold, fetch_cap),
         )
     if path_dirs:
-        rows = [r for r in rows if config.path_under_dirs(r["path"], path_dirs)]
+        rows = [
+            r
+            for r in rows
+            if config.path_under_dirs(r["path"], path_dirs, recursive=recursive)
+        ]
     rows = rows[:cap]
 
     exported = 0

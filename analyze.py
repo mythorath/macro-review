@@ -18,6 +18,8 @@ def _pending_rows(
     limit: int | None,
     force: bool,
     path_dirs: list[Path] | None = None,
+    *,
+    recursive: bool = True,
 ) -> list:
     with db() as conn:
         if force:
@@ -46,7 +48,11 @@ def _pending_rows(
             """
             rows = fetchall(conn, sql, (PROMPT_VERSION,))
     if path_dirs:
-        rows = [r for r in rows if config.path_under_dirs(r["path"], path_dirs)]
+        rows = [
+            r
+            for r in rows
+            if config.path_under_dirs(r["path"], path_dirs, recursive=recursive)
+        ]
     if limit is not None:
         rows = rows[:limit]
     return rows
@@ -129,12 +135,13 @@ def analyze_images(
     force: bool = False,
     backend: VisionBackend | None = None,
     path_dirs: list[Path] | None = None,
+    recursive: bool = True,
 ) -> int:
     """Score unscored (or outdated-prompt) images. Returns number successfully scored."""
     init_db()
     config.ensure_dirs()
     engine = backend or get_backend(backend_name)
-    rows = _pending_rows(limit, force, path_dirs=path_dirs)
+    rows = _pending_rows(limit, force, path_dirs=path_dirs, recursive=recursive)
     if not rows:
         print("No images pending analysis.")
         return 0

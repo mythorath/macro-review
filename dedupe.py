@@ -84,6 +84,7 @@ def compute_dedupe(
     force: bool = False,
     limit: int | None = None,
     path_dirs: list[Path] | None = None,
+    recursive: bool = True,
 ) -> int:
     """Group near-duplicates / bursts. Returns number of images grouped."""
     init_db()
@@ -104,7 +105,11 @@ def compute_dedupe(
             """,
         )
     if path_dirs:
-        rows = [r for r in rows if config.path_under_dirs(r["path"], path_dirs)]
+        rows = [
+            r
+            for r in rows
+            if config.path_under_dirs(r["path"], path_dirs, recursive=recursive)
+        ]
     if limit is not None and force:
         rows = rows[:limit]
 

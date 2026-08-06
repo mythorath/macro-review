@@ -34,20 +34,45 @@ def _sources_from_args(args: argparse.Namespace) -> list[tuple[str, Path]] | Non
     return config.resolve_source_dirs(dirs)
 
 
+def _recursive_from_args(args: argparse.Namespace) -> bool:
+    """--dir defaults to direct files only; default libraries stay recursive."""
+    if _dirs_from_args(args):
+        return bool(getattr(args, "recursive", False))
+    return True
+
+
 def cmd_index(args: argparse.Namespace) -> None:
-    index_images(source_dirs=_sources_from_args(args))
+    index_images(
+        source_dirs=_sources_from_args(args),
+        recursive=_recursive_from_args(args),
+    )
 
 
 def cmd_preview(args: argparse.Namespace) -> None:
-    build_previews(force=args.force, limit=args.limit, path_dirs=_dirs_from_args(args))
+    build_previews(
+        force=args.force,
+        limit=args.limit,
+        path_dirs=_dirs_from_args(args),
+        recursive=_recursive_from_args(args),
+    )
 
 
 def cmd_heuristics(args: argparse.Namespace) -> None:
-    compute_heuristics(force=args.force, limit=args.limit, path_dirs=_dirs_from_args(args))
+    compute_heuristics(
+        force=args.force,
+        limit=args.limit,
+        path_dirs=_dirs_from_args(args),
+        recursive=_recursive_from_args(args),
+    )
 
 
 def cmd_iqa(args: argparse.Namespace) -> None:
-    compute_iqa(force=args.force, limit=args.limit, path_dirs=_dirs_from_args(args))
+    compute_iqa(
+        force=args.force,
+        limit=args.limit,
+        path_dirs=_dirs_from_args(args),
+        recursive=_recursive_from_args(args),
+    )
 
 
 def cmd_analyze(args: argparse.Namespace) -> None:
@@ -56,23 +81,42 @@ def cmd_analyze(args: argparse.Namespace) -> None:
         backend_name=args.backend,
         force=args.force,
         path_dirs=_dirs_from_args(args),
+        recursive=_recursive_from_args(args),
     )
 
 
 def cmd_roi(args: argparse.Namespace) -> None:
-    compute_roi(force=args.force, limit=args.limit, path_dirs=_dirs_from_args(args))
+    compute_roi(
+        force=args.force,
+        limit=args.limit,
+        path_dirs=_dirs_from_args(args),
+        recursive=_recursive_from_args(args),
+    )
 
 
 def cmd_dedupe(args: argparse.Namespace) -> None:
-    compute_dedupe(force=args.force, limit=args.limit, path_dirs=_dirs_from_args(args))
+    compute_dedupe(
+        force=args.force,
+        limit=args.limit,
+        path_dirs=_dirs_from_args(args),
+        recursive=_recursive_from_args(args),
+    )
 
 
 def cmd_rank(args: argparse.Namespace) -> None:
-    compute_rankings(force=args.force, limit=args.limit, path_dirs=_dirs_from_args(args))
+    compute_rankings(
+        force=args.force,
+        limit=args.limit,
+        path_dirs=_dirs_from_args(args),
+        recursive=_recursive_from_args(args),
+    )
 
 
 def cmd_report(args: argparse.Namespace) -> None:
-    build_report(path_dirs=_dirs_from_args(args))
+    build_report(
+        path_dirs=_dirs_from_args(args),
+        recursive=_recursive_from_args(args),
+    )
 
 
 def cmd_crop_export(args: argparse.Namespace) -> None:
@@ -80,6 +124,7 @@ def cmd_crop_export(args: argparse.Namespace) -> None:
         score_threshold=args.threshold,
         limit=args.limit,
         path_dirs=_dirs_from_args(args),
+        recursive=_recursive_from_args(args),
     )
 
 
@@ -89,39 +134,68 @@ def cmd_run(args: argparse.Namespace) -> None:
     config.ensure_dirs()
     path_dirs = _dirs_from_args(args)
     sources = _sources_from_args(args)
+    recursive = _recursive_from_args(args)
     stage_force = args.force or (args.limit is not None)
     if path_dirs:
-        print("Scoped to:")
+        mode = "recursive" if recursive else "direct files only"
+        print(f"Scoped to ({mode}):")
         for d in path_dirs:
             print(f"  {d}")
     print("== index ==")
-    index_images(source_dirs=sources)
+    index_images(source_dirs=sources, recursive=recursive)
     print("== preview ==")
-    build_previews(force=args.force, limit=args.limit, path_dirs=path_dirs)
+    build_previews(
+        force=args.force,
+        limit=args.limit,
+        path_dirs=path_dirs,
+        recursive=recursive,
+    )
     print("== heuristics ==")
-    compute_heuristics(force=stage_force, limit=args.limit, path_dirs=path_dirs)
+    compute_heuristics(
+        force=stage_force,
+        limit=args.limit,
+        path_dirs=path_dirs,
+        recursive=recursive,
+    )
     print("== iqa ==")
-    compute_iqa(force=stage_force, limit=args.limit, path_dirs=path_dirs)
+    compute_iqa(
+        force=stage_force,
+        limit=args.limit,
+        path_dirs=path_dirs,
+        recursive=recursive,
+    )
     print("== analyze ==")
     analyze_images(
         limit=args.limit,
         backend_name=args.backend,
         force=stage_force,
         path_dirs=path_dirs,
+        recursive=recursive,
     )
     print("== roi ==")
-    compute_roi(force=stage_force, limit=args.limit, path_dirs=path_dirs)
+    compute_roi(
+        force=stage_force,
+        limit=args.limit,
+        path_dirs=path_dirs,
+        recursive=recursive,
+    )
     print("== dedupe ==")
-    compute_dedupe(force=True, limit=args.limit, path_dirs=path_dirs)
+    compute_dedupe(
+        force=True,
+        limit=args.limit,
+        path_dirs=path_dirs,
+        recursive=recursive,
+    )
     print("== rank ==")
-    compute_rankings(force=True, path_dirs=path_dirs)
+    compute_rankings(force=True, path_dirs=path_dirs, recursive=recursive)
     print("== report ==")
-    build_report(path_dirs=path_dirs)
+    build_report(path_dirs=path_dirs, recursive=recursive)
     print("== crop-export ==")
     export_crops(
         score_threshold=args.threshold,
         limit=args.crop_limit,
         path_dirs=path_dirs,
+        recursive=recursive,
     )
     print("Done.")
     print(f"Open gallery: {config.REPORT_PATH}")
@@ -132,7 +206,12 @@ def _add_dir_arg(parser: argparse.ArgumentParser) -> None:
         "--dir",
         action="append",
         metavar="PATH",
-        help="Limit to this folder (repeatable).",
+        help="Limit to this folder (repeatable). Direct files only unless --recursive.",
+    )
+    parser.add_argument(
+        "--recursive",
+        action="store_true",
+        help="With --dir, include images in subfolders (default: off).",
     )
 
 

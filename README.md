@@ -2,6 +2,8 @@
 
 Local AI pipeline for culling and ranking **macro / insect / nature** photos. It scores technical quality, aesthetics, subject-aware sharpness, and share-worthiness, then produces a browsable HTML gallery so you can find the shots worth posting.
 
+![Macro review HTML report](docs/report-screenshot.jpg)
+
 Designed for Windows + NVIDIA GPU (tested on RTX 5090). Runs fully offline with [Ollama](https://ollama.com/) for vision critique, or optionally OpenAI.
 
 ---
@@ -83,7 +85,7 @@ python main.py run
 ## CLI reference
 
 ```text
-python main.py <command> [--dir PATH ...] [--limit N] [--force]
+python main.py <command> [--dir PATH ...] [--recursive] [--limit N] [--force]
 ```
 
 | Command | Description |
@@ -117,7 +119,7 @@ python main.py iqa --dir "D:\macros"
 python main.py analyze --force --limit 20
 ```
 
-`--dir` is repeatable and scopes every stage to those paths. With `--limit`, `run` aligns IQA/VLM/ROI to the same filename-ordered set.
+`--dir` is repeatable and scopes every stage to those paths. By default it only includes **files directly in that folder** (no subfolders). Pass `--recursive` to include nested folders. Without `--dir`, default library roots are scanned recursively. With `--limit`, `run` aligns IQA/VLM/ROI to the same filename-ordered set.
 
 ---
 
@@ -232,4 +234,4 @@ setup_gpu.md         CUDA torch install notes
 
 ## License
 
-Private project. All rights reserved unless otherwise noted.
+All rights reserved unless otherwise noted.

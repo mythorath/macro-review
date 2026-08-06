@@ -80,6 +80,7 @@ def build_previews(
     force: bool = False,
     limit: int | None = None,
     path_dirs: list[Path] | None = None,
+    recursive: bool = True,
 ) -> int:
     """Generate missing/stale previews. Returns number newly written."""
     init_db()
@@ -96,7 +97,11 @@ def build_previews(
         )
 
     if path_dirs:
-        rows = [r for r in rows if config.path_under_dirs(r["path"], path_dirs)]
+        rows = [
+            r
+            for r in rows
+            if config.path_under_dirs(r["path"], path_dirs, recursive=recursive)
+        ]
 
     # When limiting, prefer images that still need a usable preview.
     if limit is not None:

@@ -79,6 +79,7 @@ def compute_rankings(
     force: bool = False,
     limit: int | None = None,
     path_dirs: list[Path] | None = None,
+    recursive: bool = True,
 ) -> int:
     """Compute blend_v2 share_score + sub-composites. Returns count written."""
     init_db()
@@ -107,7 +108,11 @@ def compute_rankings(
         )
 
     if path_dirs:
-        images = [r for r in images if config.path_under_dirs(r["path"], path_dirs)]
+        images = [
+            r
+            for r in images
+            if config.path_under_dirs(r["path"], path_dirs, recursive=recursive)
+        ]
 
     metrics_by_image: dict[str, dict[str, float]] = defaultdict(dict)
     for m in metric_rows:

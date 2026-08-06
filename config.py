@@ -140,14 +140,27 @@ def normalize_fs_path(path: str | Path) -> str:
     return str(p).replace("/", "\\").lower().rstrip("\\")
 
 
-def path_under_dirs(path: str | Path, dirs: list[Path] | None) -> bool:
-    """True if path is inside any of dirs (or dirs is None/empty = no filter)."""
+def path_under_dirs(
+    path: str | Path,
+    dirs: list[Path] | None,
+    *,
+    recursive: bool = True,
+) -> bool:
+    """True if path is inside any of dirs (or dirs is None/empty = no filter).
+
+    When recursive=False, only files whose parent directory equals a listed dir
+    match (subfolders are excluded).
+    """
     if not dirs:
         return True
     target = normalize_fs_path(path)
+    parent = normalize_fs_path(Path(path).parent)
     for d in dirs:
         prefix = normalize_fs_path(d)
-        if target == prefix or target.startswith(prefix + "\\"):
+        if recursive:
+            if target == prefix or target.startswith(prefix + "\\"):
+                return True
+        elif parent == prefix:
             return True
     return False
 
