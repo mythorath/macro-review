@@ -28,7 +28,7 @@ index → preview → heuristics → IQA ensemble → VLM critique
 | **Report** | Filterable HTML gallery + CSV |
 | **Crop export** | Full-res crops for top crop-worthy picks |
 
-All stages are **resumable** — interrupt anytime and re-run; already-scored work is skipped unless you pass `--force`.
+All stages are **resumable** — interrupt anytime and re-run the same command; already-scored work is skipped unless you pass `--force`. Scores are written to SQLite after each image, so a mid-run Ctrl+C only loses the image in progress.
 
 ---
 
@@ -65,7 +65,7 @@ python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_
    - `SOURCE_DIRS` — your photo libraries
    - `OLLAMA_HOST` / `VISION_MODEL` if needed (env vars also work)
 
-2. **Smoke test** a small batch:
+2. **Smoke test** a small batch (direct files in that folder only):
 
 ```powershell
 cd path\to\macro-review
@@ -78,6 +78,12 @@ python main.py run --dir "C:\path\to\your\macro\folder" --limit 10
 
 ```powershell
 python main.py run
+```
+
+5. **Resume** after an interrupt — re-run the same scoped command **without** `--force` (and ideally without `--limit`):
+
+```powershell
+python main.py run --dir "C:\path\to\your\macro\folder"
 ```
 
 ---
@@ -100,13 +106,32 @@ python main.py <command> [--dir PATH ...] [--recursive] [--limit N] [--force]
 | `rank` | Recompute `share_score` (no model calls) |
 | `report` | Rebuild HTML + CSV |
 | `crop-export` | Export suggested crops (`--threshold`, `--limit`) |
-| `run` | Chain all stages |
+| `run` | Chain all stages (resumable) |
+
+### Folder scoping (`--dir`)
+
+| Invocation | What gets processed |
+|------------|---------------------|
+| `--dir "D:\shoot"` | Files **directly** in that folder only |
+| `--dir "D:\shoot" --recursive` | That folder **and** all subfolders |
+| *(no `--dir`)* | Default `SOURCE_DIRS` libraries, recursively |
+
+`--dir` is repeatable. The CLI prints `Scoped to (direct files only):` or `Scoped to (recursive):` so you can confirm before a long run.
 
 ### Useful patterns
 
 ```powershell
-# Only score a specific folder
-python main.py run --dir "\\NAS\Photos\MACRO" --limit 50
+# One shoot folder (no subfolders)
+python main.py run --dir "C:\Users\you\Pictures\MACRO\Aug 4"
+
+# Include nested folders under that path
+python main.py run --dir "C:\Users\you\Pictures\MACRO\Aug 4" --recursive
+
+# Smoke test: first N images in a folder
+python main.py run --dir "\\NAS\Photos\MACRO\shoot" --limit 10
+
+# Resume after Ctrl+C (omit --force / --limit)
+python main.py run --dir "\\NAS\Photos\MACRO\shoot"
 
 # Re-blend rankings after editing weights in config.py
 python main.py rank --force
@@ -119,7 +144,7 @@ python main.py iqa --dir "D:\macros"
 python main.py analyze --force --limit 20
 ```
 
-`--dir` is repeatable and scopes every stage to those paths. By default it only includes **files directly in that folder** (no subfolders). Pass `--recursive` to include nested folders. Without `--dir`, default library roots are scanned recursively. With `--limit`, `run` aligns IQA/VLM/ROI to the same filename-ordered set.
+**Note:** On `run`, `--limit` also forces reprocessing of heuristics/IQA/analyze/ROI for the selected set (so a limited smoke test stays consistent). For resume, drop `--limit` so completed images are skipped.
 
 ---
 
@@ -225,6 +250,8 @@ setup_gpu.md         CUDA torch install notes
 
 ## Tips
 
+- **Resume**: Re-run the same `run` / stage command; pending work continues. Avoid `--force` and `--limit` when picking up mid-batch.
+- **Subfolders**: `--dir` does not descend into nested folders unless you pass `--recursive`. Useful when a shoot folder has side albums (e.g. exports) you don’t want scored.
 - **VRAM**: Run `iqa` when large Ollama models are unloaded if you hit OOM. Fast IQA metrics are small; `qrealign-lite` needs several GB.
 - **NAS / OneDrive**: Preview + ROI read originals; cloud-only placeholders may fail and are logged/skipped.
 - **CR3 + DNG pairs**: Same stem are linked in dedupe groups so you don’t double-count.
