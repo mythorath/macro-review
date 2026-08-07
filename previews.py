@@ -7,10 +7,10 @@ from io import BytesIO
 from pathlib import Path
 
 from PIL import Image, ImageOps
-from tqdm import tqdm
 
 import config
 from db import db, fetchall, init_db
+from progress import get_reporter, track
 
 try:
     import rawpy
@@ -119,9 +119,12 @@ def build_previews(
                 pending.append(row)
         rows = pending[:limit]
 
+    reporter = get_reporter()
+    reporter.stage_start("preview", total=len(rows))
     written = 0
+    failed = 0
     now = datetime.now(timezone.utc).isoformat()
-    for row in tqdm(rows, desc="Previews", unit="img"):
+    for row in track(rows, stage="preview", total=len(rows), desc="Previews"):
         image_id = row["id"]
         src = Path(row["path"])
         dest = _preview_path_for(image_id)
@@ -142,7 +145,8 @@ def build_previews(
             written += 1
         except Exception as exc:
             error = str(exc)
-            print(f"WARNING: preview failed for {src}: {exc}")
+            failed += 1
+            reporter.warning("preview", f"preview failed for {src}: {exc}")
 
         with db() as conn:
             conn.execute(
@@ -159,7 +163,12 @@ def build_previews(
                 (image_id, str(dest), width, height, now, error),
             )
 
-    print(f"Generated {written} previews.")
+    reporter.stage_done(
+        "preview",
+        ok=written,
+        failed=failed,
+        message=f"Generated {written} previews.",
+    )
     return written
 
 

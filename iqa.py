@@ -6,10 +6,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from tqdm import tqdm
-
 import config
 from db import db, fetchall, init_db
+from progress import get_reporter, track
 
 
 def _normalize(raw: float, mode: str) -> float:
@@ -48,8 +47,18 @@ class MetricRunner:
         import torch
         import pyiqa
 
+        try:
+            # Q-Align's underlying checkpoint has untied lm_head/embed_tokens
+            # weights; transformers otherwise logs a harmless WARNING about it
+            # on every load.
+            from transformers.utils import logging as hf_logging
+
+            hf_logging.set_verbosity_error()
+        except Exception:
+            pass
+
         if self.device == "cuda" and not torch.cuda.is_available():
-            print("WARNING: CUDA unavailable; falling back to CPU for IQA")
+            get_reporter().warning("iqa", "CUDA unavailable; falling back to CPU for IQA")
             self.device = "cpu"
         self._metric = pyiqa.create_metric(self.pyiqa_name, device=self.device)
 
@@ -176,7 +185,7 @@ def _migrate_legacy_iqa() -> int:
                 )
                 copied += 1
     if copied:
-        print(f"Migrated {copied} legacy IQA metric rows.")
+        get_reporter().warning("iqa", f"Migrated {copied} legacy IQA metric rows.")
     return copied
 
 
@@ -194,6 +203,7 @@ def compute_iqa(
     """
     init_db()
     config.ensure_dirs()
+    reporter = get_reporter()
     _migrate_legacy_iqa()
 
     wanted = metrics or [m[0] for m in config.IQA_METRICS]
@@ -204,42 +214,82 @@ def compute_iqa(
     ]
 
     total = 0
+    reporter.stage_start("iqa", message=f"{len(order)} metrics")
     for key in order:
         if key not in registry:
-            print(f"WARNING: unknown IQA metric {key!r}, skipping")
+            reporter.warning("iqa", f"unknown IQA metric {key!r}, skipping")
             continue
         storage_key, pyiqa_name, task, mode = registry[key]
         rows = _images_needing_metric(
             storage_key, force, limit, path_dirs, recursive=recursive
         )
         if not rows:
-            print(f"IQA {storage_key}: nothing pending")
+            reporter.stage_done(
+                "iqa",
+                ok=0,
+                metric=storage_key,
+                message=f"IQA {storage_key}: nothing pending",
+            )
             continue
 
-        print(f"IQA {storage_key} ({pyiqa_name}): {len(rows)} images")
+        reporter.stage_start(
+            "iqa",
+            total=len(rows),
+            metric=storage_key,
+            message=f"IQA {storage_key} ({pyiqa_name}): {len(rows)} images",
+        )
         runner = MetricRunner(storage_key, pyiqa_name, task, mode)
         try:
             runner.load()
         except Exception as exc:
-            print(f"WARNING: failed to load {pyiqa_name}: {exc}")
+            reporter.warning("iqa", f"failed to load {pyiqa_name}: {exc}", metric=storage_key)
             for row in rows:
                 _upsert_metric(row["id"], storage_key, None, None, str(exc))
+            reporter.stage_done(
+                "iqa",
+                ok=0,
+                failed=len(rows),
+                metric=storage_key,
+                message=f"IQA {storage_key}: load failed",
+            )
             continue
 
         ok = 0
-        for row in tqdm(rows, desc=f"IQA:{storage_key}", unit="img"):
+        failed = 0
+        for row in track(
+            rows,
+            stage="iqa",
+            total=len(rows),
+            desc=f"IQA:{storage_key}",
+            metric=storage_key,
+        ):
             try:
                 raw, score = runner.score_one(Path(row["preview_path"]))
                 _upsert_metric(row["id"], storage_key, raw, score, None)
                 ok += 1
                 total += 1
             except Exception as exc:
+                failed += 1
                 _upsert_metric(row["id"], storage_key, None, None, str(exc))
-                print(f"WARNING: {storage_key} failed for {row['path']}: {exc}")
+                reporter.warning(
+                    "iqa",
+                    f"{storage_key} failed for {row['path']}: {exc}",
+                    metric=storage_key,
+                )
         runner.unload()
-        print(f"IQA {storage_key}: {ok}/{len(rows)} ok")
+        reporter.stage_done(
+            "iqa",
+            ok=ok,
+            failed=failed,
+            metric=storage_key,
+            message=f"IQA {storage_key}: {ok}/{len(rows)} ok",
+        )
 
-    print(f"IQA ensemble wrote {total} metric values.")
+    reporter.stage_done(
+        "iqa",
+        ok=total,
+        message=f"IQA ensemble wrote {total} metric values.",
+    )
     return total
 
 

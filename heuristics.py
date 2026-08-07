@@ -7,10 +7,10 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from tqdm import tqdm
 
 import config
 from db import db, fetchall, init_db
+from progress import get_reporter, track
 
 
 def _laplacian_variance(gray: np.ndarray) -> float:
@@ -91,9 +91,12 @@ def compute_heuristics(
     if limit is not None:
         rows = rows[:limit]
 
+    reporter = get_reporter()
+    reporter.stage_start("heuristics", total=len(rows))
     updated = 0
+    failed = 0
     now = datetime.now(timezone.utc).isoformat()
-    for row in tqdm(rows, desc="Heuristics", unit="img"):
+    for row in track(rows, stage="heuristics", total=len(rows), desc="Heuristics"):
         image_id = row["id"]
         preview = Path(row["preview_path"])
         error: str | None = None
@@ -108,7 +111,8 @@ def compute_heuristics(
             updated += 1
         except Exception as exc:
             error = str(exc)
-            print(f"WARNING: heuristics failed for {preview}: {exc}")
+            failed += 1
+            reporter.warning("heuristics", f"heuristics failed for {preview}: {exc}")
 
         with db() as conn:
             conn.execute(
@@ -135,7 +139,12 @@ def compute_heuristics(
                 ),
             )
 
-    print(f"Computed heuristics for {updated} images.")
+    reporter.stage_done(
+        "heuristics",
+        ok=updated,
+        failed=failed,
+        message=f"Computed heuristics for {updated} images.",
+    )
     return updated
 
 

@@ -8,11 +8,11 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from tqdm import tqdm
 
 import config
 from db import db, fetchall, init_db
 from image_io import box_to_pixels, load_full_image
+from progress import get_reporter, track
 
 
 def _laplacian_var(gray: np.ndarray) -> float:
@@ -273,14 +273,18 @@ def compute_roi(
 ) -> int:
     """Compute ROI sharpness/composition for pending images."""
     init_db()
+    reporter = get_reporter()
     rows = _pending(force, limit, path_dirs, recursive=recursive)
     if not rows:
-        print("No images pending ROI analysis.")
+        reporter.stage_start("roi", total=0)
+        reporter.stage_done("roi", ok=0, message="No images pending ROI analysis.")
         return 0
 
+    reporter.stage_start("roi", total=len(rows))
     now = datetime.now(timezone.utc).isoformat()
     ok = 0
-    for row in tqdm(rows, desc="ROI", unit="img"):
+    failed = 0
+    for row in track(rows, stage="roi", total=len(rows), desc="ROI"):
         image_id = row["id"]
         path = Path(row["path"])
         subject_box = eye_box = None
@@ -303,7 +307,8 @@ def compute_roi(
             ok += 1
         except Exception as exc:
             error = str(exc)
-            print(f"WARNING: ROI failed for {path}: {exc}")
+            failed += 1
+            reporter.warning("roi", f"ROI failed for {path}: {exc}")
 
         with db() as conn:
             if metrics is None:
@@ -381,7 +386,12 @@ def compute_roi(
                     ),
                 )
 
-    print(f"ROI analyzed {ok}/{len(rows)} images.")
+    reporter.stage_done(
+        "roi",
+        ok=ok,
+        failed=failed,
+        message=f"ROI analyzed {ok}/{len(rows)} images.",
+    )
     return ok
 
 

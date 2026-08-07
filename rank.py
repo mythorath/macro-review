@@ -7,10 +7,9 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-from tqdm import tqdm
-
 import config
 from db import db, fetchall, init_db
+from progress import get_reporter, track
 
 
 def _as_float(value) -> float | None:
@@ -153,12 +152,16 @@ def compute_rankings(
     if limit is not None:
         pending = pending[:limit]
     if not pending:
-        print("No images pending ranking.")
+        reporter = get_reporter()
+        reporter.stage_start("rank", total=0)
+        reporter.stage_done("rank", ok=0, message="No images pending ranking.")
         return 0
 
+    reporter = get_reporter()
+    reporter.stage_start("rank", total=len(pending))
     now = datetime.now(timezone.utc).isoformat()
     written = 0
-    for row in tqdm(pending, desc="Ranking", unit="img"):
+    for row in track(pending, stage="rank", total=len(pending), desc="Ranking"):
         iid = row["id"]
 
         def p(key: str) -> float | None:
@@ -274,7 +277,11 @@ def compute_rankings(
                 (members[0]["image_id"],),
             )
 
-    print(f"Ranked {written} images (version {config.RANK_VERSION}).")
+    reporter.stage_done(
+        "rank",
+        ok=written,
+        message=f"Ranked {written} images (version {config.RANK_VERSION}).",
+    )
     return written
 
 

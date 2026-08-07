@@ -7,10 +7,9 @@ import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
-from tqdm import tqdm
-
 import config
 from db import db, fetchall, init_db
+from progress import get_reporter, track
 from vision_backend import PROMPT_VERSION, VisionBackend, get_backend
 
 
@@ -140,15 +139,19 @@ def analyze_images(
     """Score unscored (or outdated-prompt) images. Returns number successfully scored."""
     init_db()
     config.ensure_dirs()
+    reporter = get_reporter()
     engine = backend or get_backend(backend_name)
     rows = _pending_rows(limit, force, path_dirs=path_dirs, recursive=recursive)
     if not rows:
-        print("No images pending analysis.")
+        reporter.stage_start("analyze", total=0)
+        reporter.stage_done("analyze", ok=0, message="No images pending analysis.")
         return 0
 
+    reporter.stage_start("analyze", total=len(rows))
     log_path = config.LOG_DIR / "analyze_errors.log"
     scored = 0
-    for row in tqdm(rows, desc="Analyzing", unit="img"):
+    failed = 0
+    for row in track(rows, stage="analyze", total=len(rows), desc="Analyzing"):
         image_id = row["id"]
         preview = Path(row["preview_path"])
         try:
@@ -156,13 +159,19 @@ def analyze_images(
             _save_score(image_id, result, None)
             scored += 1
         except Exception as exc:
+            failed += 1
             _save_score(image_id, None, str(exc))
             with log_path.open("a", encoding="utf-8") as fh:
                 fh.write(f"{datetime.now(timezone.utc).isoformat()} | {row['path']} | {exc}\n")
                 fh.write(traceback.format_exc() + "\n")
-            print(f"WARNING: score failed for {row['path']}: {exc}")
+            reporter.warning("analyze", f"score failed for {row['path']}: {exc}")
 
-    print(f"Scored {scored}/{len(rows)} images (prompt {PROMPT_VERSION}).")
+    reporter.stage_done(
+        "analyze",
+        ok=scored,
+        failed=failed,
+        message=f"Scored {scored}/{len(rows)} images (prompt {PROMPT_VERSION}).",
+    )
     return scored
 
 

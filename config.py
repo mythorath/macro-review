@@ -5,22 +5,11 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-# Project roots
-PROJECT_ROOT = Path(r"E:\AI Picture review")
-CACHE_DIR = PROJECT_ROOT / "cache"
-PREVIEW_DIR = CACHE_DIR / "previews"
-DB_PATH = CACHE_DIR / "review.db"
-REPORT_PATH = PROJECT_ROOT / "report.html"
-CSV_PATH = PROJECT_ROOT / "results.csv"
-CROP_DIR = PROJECT_ROOT / "suggested_crops"
-LOG_DIR = PROJECT_ROOT / "logs"
+from settings import AppSettings, load_settings
 
-# Source libraries
-SOURCE_DIRS: list[tuple[str, Path]] = [
-    ("onedrive_macro", Path(r"C:\Users\mytho\OneDrive\Pictures\MACRO")),
-    ("nas_macro", Path(r"\\VasNAS\VasNAS\Andrew\MACRO")),
-    ("nas_bugs", Path(r"\\VasNAS\VasNAS\Andrew\Bugs")),
-]
+# ---------------------------------------------------------------------------
+# Product constants (not user settings)
+# ---------------------------------------------------------------------------
 
 # Image extensions to analyze (lowercase, with leading dot)
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".tif", ".tiff", ".cr3", ".dng"}
@@ -31,19 +20,10 @@ SKIP_EXTENSIONS = {".xmp", ".mp4", ".mov", ".avi"}
 PREVIEW_MAX_DIM = 1024
 PREVIEW_JPEG_QUALITY = 85
 
-# Ollama / vision backend
-_raw_ollama = os.environ.get("OLLAMA_HOST", "http://localhost:11435").strip()
-if _raw_ollama and "://" not in _raw_ollama:
-    _raw_ollama = "http://" + _raw_ollama
-# Bind address 0.0.0.0 is not a valid client target — rewrite to localhost.
-_raw_ollama = _raw_ollama.replace("://0.0.0.0", "://localhost").replace("://[::]", "://localhost")
-OLLAMA_HOST = _raw_ollama.rstrip("/") or "http://localhost:11435"
-VISION_MODEL = os.environ.get("VISION_MODEL", "qwen3.6:35b")
-BACKEND = os.environ.get("BACKEND", "ollama")  # "ollama" | "openai"
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o")
 OLLAMA_TIMEOUT_SEC = 300
 OPENAI_TIMEOUT_SEC = 120
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o")
 
 # Crop export
 CROP_SCORE_THRESHOLD = 7.0
@@ -55,26 +35,6 @@ UNDEREXPOSE_THRESHOLD = 5
 
 # Vision prompt version (bump when schema/prompt changes; triggers re-analyze)
 PROMPT_VERSION = "macro_v3"
-
-# IQA models (pyiqa metric names)
-IQA_DEVICE = os.environ.get("IQA_DEVICE", "cuda")
-QREALIGN_VARIANT = os.environ.get("QREALIGN_VARIANT", "qrealign-lite")
-
-# Ensemble metrics: (storage_key, pyiqa_name, task_or_None, normalize_mode)
-# normalize_mode: "unit10" = raw*10, "nima" = clamp 0-10, "unit01" = raw already 0-1 → *10
-IQA_METRICS: list[tuple[str, str, str | None, str]] = [
-    ("topiq_nr", "topiq_nr", None, "unit10"),
-    ("clipiqa+", "clipiqa+", None, "unit10"),
-    ("maniqa", "maniqa", None, "unit10"),
-    ("laion_aes", "laion_aes", None, "unit10"),
-    ("topiq_iaa", "topiq_iaa", None, "unit10"),
-    ("nima", "nima", None, "nima"),
-    ("qrealign_quality", QREALIGN_VARIANT, "quality", "unit10"),
-    ("qrealign_aesthetic", QREALIGN_VARIANT, "aesthetic", "unit10"),
-]
-
-# Fast metrics first; qrealign last (heavy VLM)
-IQA_FAST_KEYS = {"topiq_nr", "clipiqa+", "maniqa", "laion_aes", "topiq_iaa", "nima"}
 
 # Dedup
 PHASH_HAMMING_MAX = 10
@@ -122,6 +82,120 @@ SHARE_WEIGHTS = {
     "eye_focus": 0.10,
     "tech": 0.10,
 }
+
+IQA_FAST_KEYS = {"topiq_nr", "clipiqa+", "maniqa", "laion_aes", "topiq_iaa", "nima"}
+
+# ---------------------------------------------------------------------------
+# Runtime paths / knobs (populated by apply_settings)
+# ---------------------------------------------------------------------------
+
+CODE_ROOT = Path(__file__).resolve().parent
+
+# Mutable module attrs — always access as config.X so apply_settings() works.
+DATA_DIR: Path
+PROJECT_ROOT: Path  # alias of DATA_DIR (legacy name)
+CACHE_DIR: Path
+PREVIEW_DIR: Path
+DB_PATH: Path
+REPORT_PATH: Path
+CSV_PATH: Path
+CROP_DIR: Path
+LOG_DIR: Path
+SOURCE_DIRS: list[tuple[str, Path]]
+OLLAMA_HOST: str
+VISION_MODEL: str
+BACKEND: str
+IQA_DEVICE: str
+QREALIGN_VARIANT: str
+IQA_METRICS: list[tuple[str, str, str | None, str]]
+RECURSIVE_DEFAULT: bool
+PIPELINE_PYTHON: str
+_ACTIVE_SETTINGS: AppSettings | None = None
+
+
+def _normalize_ollama_host(raw: str) -> str:
+    host = raw.strip()
+    if host and "://" not in host:
+        host = "http://" + host
+    host = host.replace("://0.0.0.0", "://localhost").replace("://[::]", "://localhost")
+    return host.rstrip("/") or "http://localhost:11435"
+
+
+def _env_or(settings_value: str, *env_keys: str) -> str:
+    for key in env_keys:
+        val = os.environ.get(key)
+        if val is not None and str(val).strip() != "":
+            return str(val).strip()
+    return settings_value
+
+
+def apply_settings(settings: AppSettings | None = None) -> AppSettings:
+    """Apply settings (+ env overrides) to module-level path/knob attributes."""
+    global DATA_DIR, PROJECT_ROOT, CACHE_DIR, PREVIEW_DIR, DB_PATH
+    global REPORT_PATH, CSV_PATH, CROP_DIR, LOG_DIR, SOURCE_DIRS
+    global OLLAMA_HOST, VISION_MODEL, BACKEND, IQA_DEVICE, QREALIGN_VARIANT
+    global IQA_METRICS, RECURSIVE_DEFAULT, PIPELINE_PYTHON, _ACTIVE_SETTINGS
+
+    loaded = settings if settings is not None else load_settings()
+    _ACTIVE_SETTINGS = loaded
+
+    data_dir_raw = _env_or(loaded.data_dir, "MACROREVIEW_DATA_DIR")
+    data_dir = Path(data_dir_raw).expanduser()
+    try:
+        data_dir = data_dir.resolve()
+    except OSError:
+        data_dir = data_dir.absolute()
+
+    DATA_DIR = data_dir
+    PROJECT_ROOT = data_dir  # legacy alias
+    CACHE_DIR = DATA_DIR / "cache"
+    PREVIEW_DIR = CACHE_DIR / "previews"
+    DB_PATH = CACHE_DIR / "review.db"
+    REPORT_PATH = DATA_DIR / "report.html"
+    CSV_PATH = DATA_DIR / "results.csv"
+    CROP_DIR = DATA_DIR / "suggested_crops"
+    LOG_DIR = DATA_DIR / "logs"
+
+    SOURCE_DIRS = []
+    for lib in loaded.libraries:
+        root = Path(lib.path).expanduser()
+        try:
+            root = root.resolve()
+        except OSError:
+            root = root.absolute()
+        SOURCE_DIRS.append((lib.name, root))
+
+    BACKEND = _env_or(loaded.backend, "BACKEND").lower()
+    OLLAMA_HOST = _normalize_ollama_host(_env_or(loaded.ollama_host, "OLLAMA_HOST"))
+    VISION_MODEL = _env_or(loaded.vision_model, "VISION_MODEL")
+    IQA_DEVICE = _env_or(loaded.iqa_device, "IQA_DEVICE")
+    QREALIGN_VARIANT = _env_or(loaded.qrealign_variant, "QREALIGN_VARIANT")
+    RECURSIVE_DEFAULT = bool(loaded.recursive_default)
+    PIPELINE_PYTHON = str(loaded.pipeline_python or "").strip()
+
+    # Ensemble metrics: (storage_key, pyiqa_name, task_or_None, normalize_mode)
+    IQA_METRICS = [
+        ("topiq_nr", "topiq_nr", None, "unit10"),
+        ("clipiqa+", "clipiqa+", None, "unit10"),
+        ("maniqa", "maniqa", None, "unit10"),
+        ("laion_aes", "laion_aes", None, "unit10"),
+        ("topiq_iaa", "topiq_iaa", None, "unit10"),
+        ("nima", "nima", None, "nima"),
+        ("qrealign_quality", QREALIGN_VARIANT, "quality", "unit10"),
+        ("qrealign_aesthetic", QREALIGN_VARIANT, "aesthetic", "unit10"),
+    ]
+    return loaded
+
+
+def reload() -> AppSettings:
+    """Reload settings from disk and re-apply."""
+    return apply_settings(load_settings())
+
+
+def active_settings() -> AppSettings:
+    if _ACTIVE_SETTINGS is None:
+        return apply_settings()
+    return _ACTIVE_SETTINGS
 
 
 def ensure_dirs() -> None:
@@ -185,7 +259,7 @@ def resolve_source_dirs(
 ) -> list[tuple[str, Path]]:
     """
     Resolve CLI --dir overrides into (library_name, Path) pairs.
-    When dirs is None/empty, returns the default SOURCE_DIRS.
+    When dirs is None/empty, returns the configured SOURCE_DIRS.
     """
     if not dirs:
         return list(SOURCE_DIRS)
@@ -198,3 +272,7 @@ def resolve_source_dirs(
             root = root.absolute()
         resolved.append((library_name_for(root), root))
     return resolved
+
+
+# Apply defaults at import so `import config` always has usable paths.
+apply_settings()

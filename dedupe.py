@@ -7,10 +7,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from PIL import Image, ExifTags
-from tqdm import tqdm
 
 import config
 from db import db, fetchall, init_db
+from progress import get_reporter, track
 
 try:
     import imagehash
@@ -88,6 +88,7 @@ def compute_dedupe(
 ) -> int:
     """Group near-duplicates / bursts. Returns number of images grouped."""
     init_db()
+    reporter = get_reporter()
     if imagehash is None:
         raise RuntimeError("pip install imagehash is required for dedupe")
 
@@ -113,9 +114,11 @@ def compute_dedupe(
     if limit is not None and force:
         rows = rows[:limit]
 
+    reporter.stage_start("dedupe", total=len(rows))
     # Compute missing hashes
     records: list[dict] = []
-    for row in tqdm(rows, desc="pHash", unit="img"):
+    failed = 0
+    for row in track(rows, stage="dedupe", total=len(rows), desc="pHash"):
         image_id = row["id"]
         phash = row["phash"]
         capture_ts = None
@@ -123,7 +126,8 @@ def compute_dedupe(
             try:
                 phash = _phash_hex(Path(row["preview_path"]))
             except Exception as exc:
-                print(f"WARNING: phash failed for {row['path']}: {exc}")
+                failed += 1
+                reporter.warning("dedupe", f"phash failed for {row['path']}: {exc}")
                 continue
             capture_ts = _exif_datetime(Path(row["path"]))
             if capture_ts is None:
@@ -143,7 +147,7 @@ def compute_dedupe(
         )
 
     if not records:
-        print("No images to group.")
+        reporter.stage_done("dedupe", ok=0, failed=failed, message="No images to group.")
         return 0
 
     uf = UnionFind()
@@ -232,7 +236,12 @@ def compute_dedupe(
                 (best_id,),
             )
 
-    print(f"Grouped {len(records)} images into {len(roots)} dupe/burst groups.")
+    reporter.stage_done(
+        "dedupe",
+        ok=len(records),
+        failed=failed,
+        message=f"Grouped {len(records)} images into {len(roots)} dupe/burst groups.",
+    )
     return len(records)
 
 

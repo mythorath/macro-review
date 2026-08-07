@@ -26,4 +26,6 @@ desktop.ini
 
 # Scratch / temp
 _*.py
+!__init__.py
+!__main__.py
 *.log

@@ -1,10 +1,32 @@
 cd "E:\AI Picture review"
 
+# Desktop GUI (PySide6 — install on system/dev Python, not the managed ML venv)
+# Library page runs the pipeline via settings.pipeline_python (managed AppData venv)
+# Results page is a native gallery over review.db + preview cache
+pip install -r requirements-gui.txt
+python -m gui
+
+# Settings (workspace + libraries)
+python main.py settings init
+python main.py settings show
+
+# Hardware / env check
+python main.py doctor
+python main.py doctor --json
+
+# Managed environment (AppData venv + deps + Ollama/model)
+python main.py setup --dry-run
+python main.py setup --yes
+python main.py doctor --pipeline
+
 # One shoot folder (direct files only — does NOT enter subfolders)
 python main.py run --dir "C:\Users\mytho\OneDrive\Pictures\MACRO\Aug 4"
 
 # Same folder including subfolders
 python main.py run --dir "C:\Users\mytho\OneDrive\Pictures\MACRO\Aug 4" --recursive
+
+# Machine-readable progress (for GUI / tools)
+python main.py run --dir "C:\Users\mytho\OneDrive\Pictures\MACRO\Aug 4" --progress jsonl
 
 # One local folder, first 10 images
 python main.py run --dir "C:\Users\mytho\OneDrive\Pictures\MACRO" --limit 10

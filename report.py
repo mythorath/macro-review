@@ -9,6 +9,7 @@ from pathlib import Path
 
 import config
 from db import db, fetchall, init_db
+from progress import get_reporter
 
 
 def _fmt(value, digits: int = 1) -> str:
@@ -32,6 +33,15 @@ def _bar(value, label: str) -> str:
         f'<div class="bar"><div class="bar-fill" style="width:{pct:.0f}%"></div></div>'
         f'<span class="bar-val">{text}</span></div>'
     )
+
+
+def load_scored_rows(
+    path_dirs: list[Path] | None = None,
+    *,
+    recursive: bool = True,
+) -> list:
+    """Public alias for gallery / CLI consumers."""
+    return _load_scored_rows(path_dirs, recursive=recursive)
 
 
 def _load_scored_rows(
@@ -60,7 +70,8 @@ def _load_scored_rows(
                 roi.eye_sharpness, roi.subject_bg_separation, roi.thirds_distance,
                 roi.bg_clutter, roi.motion_blur_flag,
                 d.group_id, d.is_best,
-                (SELECT COUNT(*) FROM dupe_groups d2 WHERE d2.group_id = d.group_id) AS group_size
+                (SELECT COUNT(*) FROM dupe_groups d2 WHERE d2.group_id = d.group_id) AS group_size,
+                ce.export_path AS crop_export_path
             FROM images i
             LEFT JOIN scores s ON s.image_id = i.id AND s.error IS NULL
             LEFT JOIN previews p ON p.image_id = i.id
@@ -68,6 +79,7 @@ def _load_scored_rows(
             LEFT JOIN rankings r ON r.image_id = i.id
             LEFT JOIN roi_metrics roi ON roi.image_id = i.id
             LEFT JOIN dupe_groups d ON d.image_id = i.id
+            LEFT JOIN crop_exports ce ON ce.image_id = i.id AND ce.error IS NULL
             WHERE (s.overall_score IS NOT NULL OR r.share_score IS NOT NULL)
             ORDER BY
                 CASE WHEN r.share_score IS NULL THEN 1 ELSE 0 END,
@@ -123,7 +135,6 @@ def write_csv(rows: list | None = None) -> Path:
         writer.writeheader()
         for row in rows:
             writer.writerow({k: row.get(k) for k in fieldnames})
-    print(f"Wrote {config.CSV_PATH}")
     return config.CSV_PATH
 
 
@@ -406,7 +417,6 @@ apply();
 </html>
 """
     config.REPORT_PATH.write_text(page, encoding="utf-8")
-    print(f"Wrote {config.REPORT_PATH}")
     return config.REPORT_PATH
 
 
@@ -415,9 +425,16 @@ def build_report(
     *,
     recursive: bool = True,
 ) -> tuple[Path, Path]:
+    reporter = get_reporter()
+    reporter.stage_start("report")
     rows = _load_scored_rows(path_dirs=path_dirs, recursive=recursive)
     html_path = write_html(rows)
     csv_path = write_csv(rows)
+    reporter.stage_done(
+        "report",
+        ok=len(rows),
+        message=f"Wrote {html_path} and {csv_path} ({len(rows)} rows).",
+    )
     return html_path, csv_path
 
 

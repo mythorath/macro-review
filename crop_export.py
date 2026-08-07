@@ -6,11 +6,10 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from tqdm import tqdm
-
 import config
 from db import db, fetchall, init_db
 from image_io import box_to_pixels, load_full_image
+from progress import get_reporter, track
 
 
 def _apply_crop(img, box: list[float]):
@@ -60,9 +59,12 @@ def export_crops(
         ]
     rows = rows[:cap]
 
+    reporter = get_reporter()
+    reporter.stage_start("crop-export", total=len(rows))
     exported = 0
+    failed = 0
     now = datetime.now(timezone.utc).isoformat()
-    for row in tqdm(rows, desc="Crop export", unit="img"):
+    for row in track(rows, stage="crop-export", total=len(rows), desc="Crop export"):
         image_id = row["id"]
         src = Path(row["path"])
         try:
@@ -81,7 +83,8 @@ def export_crops(
         except Exception as exc:
             error = str(exc)
             export_path = ""
-            print(f"WARNING: crop failed for {src}: {exc}")
+            failed += 1
+            reporter.warning("crop-export", f"crop failed for {src}: {exc}")
 
         with db() as conn:
             conn.execute(
@@ -96,7 +99,12 @@ def export_crops(
                 (image_id, export_path, now, error),
             )
 
-    print(f"Exported {exported} crops to {config.CROP_DIR}")
+    reporter.stage_done(
+        "crop-export",
+        ok=exported,
+        failed=failed,
+        message=f"Exported {exported} crops to {config.CROP_DIR}",
+    )
     return exported
 
 

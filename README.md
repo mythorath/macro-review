@@ -60,30 +60,51 @@ python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_
 
 ## Quick start
 
-1. **Edit paths** in [`config.py`](config.py):
-   - `PROJECT_ROOT` — where cache/report live
-   - `SOURCE_DIRS` — your photo libraries
-   - `OLLAMA_HOST` / `VISION_MODEL` if needed (env vars also work)
+1. **Desktop GUI** (setup wizard + Library run + settings):
 
-2. **Smoke test** a small batch (direct files in that folder only):
+```powershell
+pip install -r requirements-gui.txt
+python -m gui
+```
+
+Install GUI deps on your system/dev Python (PySide6 only). Setup/doctor use that interpreter; **Library → Start** runs `main.py run` with the managed AppData venv (`pipeline_python`). **Results** is an in-app native gallery (thumbnails from the preview cache); `report.html` remains available to open externally.
+
+2. **Settings + managed environment** (CLI path):
+
+```powershell
+python main.py settings init
+python main.py setup --yes
+python main.py doctor --pipeline
+```
+
+`setup` creates `%LOCALAPPDATA%\MacroReview\venv`, installs CUDA/CPU torch + deps, ensures Ollama/model, and writes `pipeline_python` into settings. Paths also live in `%LOCALAPPDATA%\MacroReview\settings.json` (override with `MACROREVIEW_SETTINGS`). Env vars still win (`OLLAMA_HOST`, `VISION_MODEL`, `BACKEND`, `MACROREVIEW_DATA_DIR`, …).
+
+3. **Smoke test** a small batch (direct files in that folder only):
 
 ```powershell
 cd path\to\macro-review
 python main.py run --dir "C:\path\to\your\macro\folder" --limit 10
 ```
 
-3. Open `report.html` in a browser (uses `file://` links to originals).
+4. Open `report.html` in a browser (uses `file://` links to originals).
 
-4. Full library (hours for VLM on ~1.5k images):
+5. Full library (hours for VLM on ~1.5k images):
 
 ```powershell
 python main.py run
 ```
 
-5. **Resume** after an interrupt — re-run the same scoped command **without** `--force` (and ideally without `--limit`):
+6. **Resume** after an interrupt — re-run the same scoped command **without** `--force` (and ideally without `--limit`):
 
 ```powershell
 python main.py run --dir "C:\path\to\your\macro\folder"
+```
+
+Machine-readable progress for tools/GUI (JSON Lines on stdout):
+
+```powershell
+python main.py run --dir "C:\path\to\folder" --progress jsonl
+# or: $env:MACROREVIEW_PROGRESS = "jsonl"
 ```
 
 ---
@@ -91,7 +112,7 @@ python main.py run --dir "C:\path\to\your\macro\folder"
 ## CLI reference
 
 ```text
-python main.py <command> [--dir PATH ...] [--recursive] [--limit N] [--force]
+python main.py <command> [--dir PATH ...] [--recursive] [--progress human|jsonl] [--limit N] [--force]
 ```
 
 | Command | Description |
@@ -107,6 +128,9 @@ python main.py <command> [--dir PATH ...] [--recursive] [--limit N] [--force]
 | `report` | Rebuild HTML + CSV |
 | `crop-export` | Export suggested crops (`--threshold`, `--limit`) |
 | `run` | Chain all stages (resumable) |
+| `settings` | `show` / `init` / `set-data-dir` / `add-library` |
+| `doctor` | Probe GPU/Python/torch/Ollama (`--pipeline` uses managed venv) |
+| `setup` | Create managed venv, install torch/deps, ensure Ollama/model |
 
 ### Folder scoping (`--dir`)
 
@@ -126,6 +150,15 @@ python main.py run --dir "C:\Users\you\Pictures\MACRO\Aug 4"
 
 # Include nested folders under that path
 python main.py run --dir "C:\Users\you\Pictures\MACRO\Aug 4" --recursive
+
+# Check GPU / deps before a long run
+python main.py doctor
+python main.py doctor --pipeline
+python main.py doctor --json
+
+# First-time / repair managed environment
+python main.py setup --dry-run
+python main.py setup --yes
 
 # Smoke test: first N images in a folder
 python main.py run --dir "\\NAS\Photos\MACRO\shoot" --limit 10
@@ -211,17 +244,28 @@ These are gitignored — regenerate anytime with the CLI.
 
 ## Configuration cheatsheet
 
+User settings file: `%LOCALAPPDATA%\MacroReview\settings.json` (`python main.py settings show`).
+
 | Setting | Default | Notes |
 |---------|---------|-------|
-| `OLLAMA_HOST` | `http://localhost:11435` | `0.0.0.0` is rewritten to `localhost` |
-| `VISION_MODEL` | `qwen3.6:35b` | Must support vision |
-| `BACKEND` | `ollama` | or `openai` + `OPENAI_API_KEY` |
-| `IQA_DEVICE` | `cuda` | |
-| `QREALIGN_VARIANT` | `qrealign-lite` | or `qrealign-pro` |
-| `PROMPT_VERSION` | `macro_v3` | Bump to force VLM re-score |
+| `data_dir` | legacy project path until you change it | Workspace for `cache/`, `report.html`, crops, logs |
+| `libraries` | seeded defaults on `settings init` | Default scan roots when `--dir` is omitted |
+| `OLLAMA_HOST` / `ollama_host` | `http://localhost:11435` | Env overrides settings; `0.0.0.0` → `localhost` |
+| `VISION_MODEL` / `vision_model` | `qwen3.6:35b` | Must support vision |
+| `BACKEND` / `backend` | `ollama` | or `openai` + `OPENAI_API_KEY` |
+| `IQA_DEVICE` / `iqa_device` | `cuda` | |
+| `QREALIGN_VARIANT` / `qrealign_variant` | `qrealign-lite` | or `qrealign-pro` |
+| `pipeline_python` | set by `setup` | Managed venv interpreter; `doctor --pipeline` uses this |
+| `MACROREVIEW_DATA_DIR` | — | Env override for data_dir |
+| `MACROREVIEW_PROGRESS` | `human` | or `jsonl` for machine-readable stdout |
+| `PROMPT_VERSION` | `macro_v3` | Code constant; bump to force VLM re-score |
 | `CROP_SCORE_THRESHOLD` | `7.0` | Min share/overall for crop export |
 | `PHASH_HAMMING_MAX` | `10` | Near-dupe sensitivity |
 | `BURST_GAP_SECONDS` | `20` | Max EXIF time gap for bursts |
+
+Blend weights remain in [`config.py`](config.py) (`TECH_WEIGHTS`, `AES_WEIGHTS`, …).
+
+See also [`gui_build_roadmap.md`](gui_build_roadmap.md) for the desktop-app phase plan.
 
 ---
 
@@ -229,7 +273,11 @@ These are gitignored — regenerate anytime with the CLI.
 
 ```text
 main.py              CLI entry
-config.py            Paths, models, blend weights
+config.py            Constants + settings-backed paths
+settings.py          User settings load/save (AppData JSON)
+progress.py          Human / JSONL progress reporters
+hardware.py          GPU/env probe + doctor recommendations
+setup_env.py         Managed venv + pip/Ollama setup orchestrator
 db.py                SQLite schema + migrations
 indexer.py           Folder scan
 previews.py          Preview cache
@@ -243,13 +291,19 @@ rank.py              Percentile blend_v2
 report.py            HTML + CSV
 crop_export.py       Crop writer
 image_io.py          Shared full-res / RAW loader
-setup_gpu.md         CUDA torch install notes
+gui_build_roadmap.md Desktop GUI phase plan
+gui/                 PySide6 shell (`python -m gui`; Results gallery under gui/results/)
+requirements-gui.txt PySide6 for the desktop UI (no WebEngine)
+setup_gpu.md         CUDA / CPU / AMD guidance + doctor
 ```
 
 ---
 
 ## Tips
 
+- **GUI**: `pip install -r requirements-gui.txt` then `python -m gui` (Setup, Library run, native Results gallery, Settings).
+- **Doctor**: Run `python main.py doctor` (current Python) or `doctor --pipeline` (managed venv from `setup`).
+- **Setup**: Prefer `python main.py setup --yes` over hand-installing CUDA torch; use `--skip-ollama` / `--skip-model` when those are already fine.
 - **Resume**: Re-run the same `run` / stage command; pending work continues. Avoid `--force` and `--limit` when picking up mid-batch.
 - **Subfolders**: `--dir` does not descend into nested folders unless you pass `--recursive`. Useful when a shoot folder has side albums (e.g. exports) you don’t want scored.
 - **VRAM**: Run `iqa` when large Ollama models are unloaded if you hit OOM. Fast IQA metrics are small; `qrealign-lite` needs several GB.
