@@ -5,6 +5,12 @@ cd "E:\AI Picture review"
 # Results page is a native gallery over review.db + preview cache
 pip install -r requirements-gui.txt
 python -m gui
+python -m gui --version
+python -m gui --smoke-test
+
+# Portable Windows build (PyInstaller one-folder ZIP)
+pip install -r packaging/requirements-build.txt
+./packaging/build.ps1 -Channel preview
 
 # Settings (workspace + libraries)
 python main.py settings init

@@ -7,17 +7,13 @@ import os
 import tempfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-SCHEMA_VERSION = 1
+from version_info import default_update_channel
 
-# Legacy defaults so existing installs keep working when no settings file exists.
-_LEGACY_DATA_DIR = Path(r"E:\AI Picture review")
-_LEGACY_LIBRARIES: list[dict[str, str]] = [
-    {"name": "onedrive_macro", "path": r"C:\Users\mytho\OneDrive\Pictures\MACRO"},
-    {"name": "nas_macro", "path": r"\\VasNAS\VasNAS\Andrew\MACRO"},
-    {"name": "nas_bugs", "path": r"\\VasNAS\VasNAS\Andrew\Bugs"},
-]
+SCHEMA_VERSION = 2
+
+UpdateChannel = Literal["stable", "preview"]
 
 
 def app_data_root() -> Path:
@@ -36,7 +32,7 @@ def default_settings_path() -> Path:
 
 
 def default_data_dir_for_new_install() -> Path:
-    """Preferred data dir for fresh installs (Phase 0+ product default)."""
+    """Preferred data dir for fresh installs."""
     return app_data_root() / "data"
 
 
@@ -49,7 +45,7 @@ class LibraryEntry:
 @dataclass
 class AppSettings:
     schema_version: int = SCHEMA_VERSION
-    data_dir: str = str(_LEGACY_DATA_DIR)
+    data_dir: str = ""
     libraries: list[LibraryEntry] = field(default_factory=list)
     backend: str = "ollama"
     ollama_host: str = "http://localhost:11435"
@@ -58,6 +54,10 @@ class AppSettings:
     qrealign_variant: str = "qrealign-lite"
     recursive_default: bool = False
     pipeline_python: str = ""
+    base_python: str = ""
+    update_channel: str = "stable"
+    check_updates: bool = True
+    last_update_check: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -71,15 +71,19 @@ class AppSettings:
             "qrealign_variant": self.qrealign_variant,
             "recursive_default": self.recursive_default,
             "pipeline_python": self.pipeline_python,
+            "base_python": self.base_python,
+            "update_channel": self.update_channel,
+            "check_updates": self.check_updates,
+            "last_update_check": self.last_update_check,
         }
 
 
 def default_settings() -> AppSettings:
-    """Fallback when settings file is missing (preserves today's machine defaults)."""
+    """Fresh-install defaults (no personal libraries / machine paths)."""
     return AppSettings(
         schema_version=SCHEMA_VERSION,
-        data_dir=str(_LEGACY_DATA_DIR),
-        libraries=[LibraryEntry(**lib) for lib in _LEGACY_LIBRARIES],
+        data_dir=str(default_data_dir_for_new_install()),
+        libraries=[],
         backend="ollama",
         ollama_host="http://localhost:11435",
         vision_model="qwen3.6:35b",
@@ -87,6 +91,10 @@ def default_settings() -> AppSettings:
         qrealign_variant="qrealign-lite",
         recursive_default=False,
         pipeline_python="",
+        base_python="",
+        update_channel=default_update_channel(),
+        check_updates=True,
+        last_update_check="",
     )
 
 
@@ -107,14 +115,23 @@ def _parse_libraries(raw: Any) -> list[LibraryEntry]:
     return out
 
 
+def _normalize_channel(raw: Any, fallback: str) -> str:
+    value = str(raw or "").strip().lower()
+    if value in {"stable", "preview"}:
+        return value
+    return fallback
+
+
 def settings_from_dict(data: dict[str, Any]) -> AppSettings:
     base = default_settings()
     libraries = _parse_libraries(data.get("libraries"))
-    if not libraries:
+    # Empty list in file means "no libraries"; only fall back when key missing.
+    if "libraries" not in data:
         libraries = list(base.libraries)
+    data_dir = str(data.get("data_dir") or "").strip() or base.data_dir
     return AppSettings(
         schema_version=int(data.get("schema_version") or SCHEMA_VERSION),
-        data_dir=str(data.get("data_dir") or base.data_dir),
+        data_dir=data_dir,
         libraries=libraries,
         backend=str(data.get("backend") or base.backend),
         ollama_host=str(data.get("ollama_host") or base.ollama_host),
@@ -123,6 +140,10 @@ def settings_from_dict(data: dict[str, Any]) -> AppSettings:
         qrealign_variant=str(data.get("qrealign_variant") or base.qrealign_variant),
         recursive_default=bool(data.get("recursive_default", base.recursive_default)),
         pipeline_python=str(data.get("pipeline_python") or ""),
+        base_python=str(data.get("base_python") or ""),
+        update_channel=_normalize_channel(data.get("update_channel"), base.update_channel),
+        check_updates=bool(data.get("check_updates", base.check_updates)),
+        last_update_check=str(data.get("last_update_check") or ""),
     )
 
 
@@ -142,6 +163,7 @@ def load_settings(path: Path | None = None) -> AppSettings:
 def save_settings(settings: AppSettings, path: Path | None = None) -> Path:
     settings_path = path or default_settings_path()
     settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings.schema_version = SCHEMA_VERSION
     payload = json.dumps(settings.to_dict(), indent=2, ensure_ascii=False) + "\n"
     fd, tmp_name = tempfile.mkstemp(
         prefix="settings_",

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QButtonGroup,
     QHBoxLayout,
@@ -20,8 +22,10 @@ from gui.pages.library_page import LibraryPage
 from gui.pages.results_page import ResultsPage
 from gui.pages.settings_page import SettingsPage
 from gui.pages.setup_page import SetupPage
+from gui.updates import UpdateCheckWorker, UpdateInfo
 from gui.workers.cli_worker import CliWorker
 from settings import load_settings
+from version_info import load_build_info
 
 
 class MainWindow(QMainWindow):
@@ -30,13 +34,15 @@ class MainWindow(QMainWindow):
     PAGE_RESULTS = 2
     PAGE_SETTINGS = 3
 
-    def __init__(self) -> None:
+    def __init__(self, *, skip_startup_doctor: bool = False) -> None:
         super().__init__()
         self.setWindowTitle("Macro Review")
         self.resize(1100, 720)
 
         self._startup_worker = CliWorker(self)
         self._nav_buttons: dict[int, QPushButton] = {}
+        self._update_worker = None
+        self._pending_update_url = ""
 
         self.setup_page = SetupPage()
         self.library_page = LibraryPage()
@@ -63,16 +69,26 @@ class MainWindow(QMainWindow):
         self.setStatusBar(status)
         self._status_label = QLabel("Checking readiness…")
         status.addWidget(self._status_label)
+        self._update_btn = QPushButton("Update available")
+        self._update_btn.setObjectName("SecondaryButton")
+        self._update_btn.setVisible(False)
+        self._update_btn.clicked.connect(self._open_update_url)
+        status.addPermanentWidget(self._update_btn)
 
         self.setup_page.readiness_changed.connect(self._on_readiness)
         self.settings_page.readiness_changed.connect(self._on_readiness)
+        self.settings_page.check_updates_requested.connect(self._check_updates_manual)
         self.library_page.run_finished.connect(self._on_library_run_finished)
         self._startup_worker.json_finished.connect(self._on_startup_doctor)
         self._startup_worker.failed.connect(self._on_startup_failed)
         self._startup_worker.finished.connect(self._on_startup_finished)
 
         self.show_page(self.PAGE_SETUP)
-        self._start_readiness_check()
+        if skip_startup_doctor:
+            self._status_label.setText("Smoke mode")
+        else:
+            self._start_readiness_check()
+            self._check_updates_auto()
 
     def _build_sidebar(self) -> QWidget:
         sidebar = QWidget()
@@ -149,3 +165,51 @@ class MainWindow(QMainWindow):
         if code != 0 and self._status_label.text() == "Checking readiness…":
             self._status_label.setText("Setup needed")
             self.show_page(self.PAGE_SETUP)
+
+    def _check_updates_auto(self) -> None:
+        settings = load_settings()
+        if not settings.check_updates:
+            return
+        self._start_update_check(manual=False)
+
+    def _check_updates_manual(self) -> None:
+        self.statusBar().showMessage("Checking for updates…", 4000)
+        self._start_update_check(manual=True)
+
+    def _start_update_check(self, *, manual: bool) -> None:
+        if self._update_worker is not None and self._update_worker.isRunning():
+            return
+        worker = UpdateCheckWorker(manual=manual, parent=self)
+        self._update_worker = worker
+        worker.finished_info.connect(self._on_update_info)
+        worker.failed.connect(self._on_update_failed)
+        worker.start()
+
+    def _on_update_info(self, info: object) -> None:
+        if not isinstance(info, UpdateInfo):
+            return
+        if not info.available:
+            if info.manual:
+                self.statusBar().showMessage("You're on the latest build.", 5000)
+            self._update_btn.setVisible(False)
+            self._pending_update_url = ""
+            return
+        self._pending_update_url = info.html_url
+        label = f"Update {info.tag_name}" if info.tag_name else "Update available"
+        self._update_btn.setText(label)
+        self._update_btn.setVisible(True)
+        self.statusBar().showMessage(
+            f"{label} — click to open the download page",
+            8000 if info.manual else 0,
+        )
+
+    def _on_update_failed(self, message: str, manual: bool) -> None:
+        if manual:
+            self.statusBar().showMessage(message, 6000)
+
+    def _open_update_url(self) -> None:
+        url = getattr(self, "_pending_update_url", "") or ""
+        if not url:
+            info = load_build_info()
+            url = f"https://github.com/{info.repo}/releases"
+        QDesktopServices.openUrl(QUrl(url))

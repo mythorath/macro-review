@@ -7,6 +7,12 @@ logs/
 report.html
 results.csv
 
+# Packaging outputs
+build/
+dist/
+build_info.json
+*.spec.bak
+
 # Python
 __pycache__/
 *.py[cod]

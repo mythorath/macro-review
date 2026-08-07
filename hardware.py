@@ -16,6 +16,8 @@ from typing import Any, Literal
 import requests
 
 import config
+from paths import is_frozen
+from python_discover import discover_base_python
 
 # ---------------------------------------------------------------------------
 # Recommendation constants (Phase 2/3 reuse these)
@@ -220,6 +222,24 @@ def _run_cmd(args: list[str], *, timeout: float = 15.0) -> tuple[int, str, str]:
 
 
 def _probe_python() -> PythonInfo:
+    if is_frozen():
+        candidate = discover_base_python()
+        if candidate is not None:
+            return PythonInfo(
+                executable=str(candidate.executable),
+                version=candidate.version_str,
+                version_tuple=candidate.version,
+                is_64bit=candidate.is_64bit,
+                in_venv=False,
+            )
+        return PythonInfo(
+            executable="(frozen — no system Python 3.11+ found)",
+            version="unknown",
+            version_tuple=(0, 0, 0),
+            is_64bit=False,
+            in_venv=False,
+        )
+
     vi = sys.version_info
     in_venv = sys.prefix != getattr(sys, "base_prefix", sys.prefix)
     return PythonInfo(

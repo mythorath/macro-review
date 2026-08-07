@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from paths import pipeline_root
 from settings import AppSettings, load_settings
 
 # ---------------------------------------------------------------------------
@@ -89,7 +90,7 @@ IQA_FAST_KEYS = {"topiq_nr", "clipiqa+", "maniqa", "laion_aes", "topiq_iaa", "ni
 # Runtime paths / knobs (populated by apply_settings)
 # ---------------------------------------------------------------------------
 
-CODE_ROOT = Path(__file__).resolve().parent
+CODE_ROOT = pipeline_root()
 
 # Mutable module attrs — always access as config.X so apply_settings() works.
 DATA_DIR: Path

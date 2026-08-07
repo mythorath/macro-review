@@ -7,6 +7,7 @@ from pathlib import Path
 from PySide6.QtCore import QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QFormLayout,
@@ -24,10 +25,12 @@ from PySide6.QtWidgets import (
 from gui.widgets.progress_panel import ProgressPanel
 from gui.workers.cli_worker import CliWorker
 from settings import app_data_root, default_settings_path, load_settings, save_settings
+from version_info import load_build_info
 
 
 class SettingsPage(QWidget):
     readiness_changed = Signal(bool, str)
+    check_updates_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -38,6 +41,8 @@ class SettingsPage(QWidget):
         self.settings_path_label.setWordWrap(True)
         self.pipeline_python_label = QLabel("—")
         self.pipeline_python_label.setWordWrap(True)
+        self.version_label = QLabel("—")
+        self.version_label.setWordWrap(True)
         self.status = QLabel("")
         self.status.setWordWrap(True)
 
@@ -50,6 +55,10 @@ class SettingsPage(QWidget):
         self.iqa_device.addItems(["cuda", "cpu"])
         self.qrealign_variant = QComboBox()
         self.qrealign_variant.addItems(["qrealign-lite", "qrealign-pro"])
+        self.update_channel = QComboBox()
+        self.update_channel.addItem("Stable", "stable")
+        self.update_channel.addItem("Preview", "preview")
+        self.check_updates = QCheckBox("Check for updates automatically")
 
         self.browse_btn = QPushButton("Browse…")
         self.browse_btn.setObjectName("SecondaryButton")
@@ -59,6 +68,8 @@ class SettingsPage(QWidget):
         self.setup_btn = QPushButton("Re-run setup")
         self.open_folder_btn = QPushButton("Open settings folder")
         self.open_folder_btn.setObjectName("SecondaryButton")
+        self.updates_btn = QPushButton("Check for updates")
+        self.updates_btn.setObjectName("SecondaryButton")
 
         self.progress = ProgressPanel()
 
@@ -67,6 +78,7 @@ class SettingsPage(QWidget):
         self.doctor_btn.clicked.connect(self.run_doctor)
         self.setup_btn.clicked.connect(self.run_setup)
         self.open_folder_btn.clicked.connect(self._open_settings_folder)
+        self.updates_btn.clicked.connect(self.check_updates_requested.emit)
         self.progress.cancel_requested.connect(self._worker.cancel)
 
         self._worker.line_received.connect(self.progress.handle_event)
@@ -82,10 +94,14 @@ class SettingsPage(QWidget):
         title = QLabel("Settings")
         title.setObjectName("PageTitle")
         subtitle = QLabel(
-            "Paths and model knobs. Library and Results screens arrive in later phases."
+            "Paths, model knobs, and update channel. Changes apply after Save."
         )
         subtitle.setObjectName("PageSubtitle")
         subtitle.setWordWrap(True)
+
+        about = QGroupBox("About")
+        about_form = QFormLayout(about)
+        about_form.addRow("Version", self.version_label)
 
         paths = QGroupBox("Paths")
         paths_form = QFormLayout(paths)
@@ -103,6 +119,12 @@ class SettingsPage(QWidget):
         knobs_form.addRow("Ollama host", self.ollama_host)
         knobs_form.addRow("IQA device", self.iqa_device)
         knobs_form.addRow("QRealign variant", self.qrealign_variant)
+
+        updates = QGroupBox("Updates")
+        updates_form = QFormLayout(updates)
+        updates_form.addRow("Channel", self.update_channel)
+        updates_form.addRow(self.check_updates)
+        updates_form.addRow(self.updates_btn)
 
         actions = QHBoxLayout()
         actions.addWidget(self.save_btn)
@@ -123,8 +145,10 @@ class SettingsPage(QWidget):
         layout.setSpacing(14)
         layout.addWidget(title)
         layout.addWidget(subtitle)
+        layout.addWidget(about)
         layout.addWidget(paths)
         layout.addWidget(knobs)
+        layout.addWidget(updates)
         layout.addWidget(tools)
         layout.addStretch(1)
 
@@ -139,6 +163,8 @@ class SettingsPage(QWidget):
 
     def reload(self) -> None:
         s = load_settings()
+        info = load_build_info()
+        self.version_label.setText(info.display)
         self.settings_path_label.setText(str(default_settings_path()))
         self.pipeline_python_label.setText(s.pipeline_python or "(not set — run setup)")
         self.data_dir.setText(s.data_dir)
@@ -153,6 +179,9 @@ class SettingsPage(QWidget):
         idx = self.qrealign_variant.findText(s.qrealign_variant)
         if idx >= 0:
             self.qrealign_variant.setCurrentIndex(idx)
+        channel_idx = self.update_channel.findData(s.update_channel)
+        self.update_channel.setCurrentIndex(max(0, channel_idx))
+        self.check_updates.setChecked(bool(s.check_updates))
 
     def save(self) -> None:
         s = load_settings()
@@ -162,6 +191,8 @@ class SettingsPage(QWidget):
         s.ollama_host = self.ollama_host.text().strip() or s.ollama_host
         s.iqa_device = self.iqa_device.currentText().strip() or s.iqa_device
         s.qrealign_variant = self.qrealign_variant.currentText().strip() or s.qrealign_variant
+        s.update_channel = str(self.update_channel.currentData() or "stable")
+        s.check_updates = self.check_updates.isChecked()
         path = save_settings(s)
         self.status.setText(f"Saved {path}")
         self.reload()

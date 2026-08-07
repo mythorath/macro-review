@@ -7,7 +7,6 @@ import shutil
 import subprocess
 import sys
 import time
-import venv
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -17,9 +16,12 @@ import requests
 
 import config
 from hardware import Recommendations, find_ollama_binary, probe_system, recommend
+from paths import pipeline_root, requirements_path as resolve_requirements_path
 from progress import get_reporter
+from python_discover import PythonCandidate, probe_python, require_base_python
 from settings import (
     app_data_root,
+    default_data_dir_for_new_install,
     default_settings_path,
     load_settings,
     save_settings,
@@ -83,11 +85,21 @@ def download_cache_dir() -> Path:
 
 
 def code_root() -> Path:
-    return Path(config.CODE_ROOT)
+    return pipeline_root()
 
 
 def requirements_path() -> Path:
-    return code_root() / "requirements.txt"
+    return resolve_requirements_path()
+
+
+def resolve_base_python(settings_hint: str | None = None) -> PythonCandidate:
+    """Prefer a persisted base_python when still valid; otherwise rediscover."""
+    hint = (settings_hint or "").strip()
+    if hint:
+        probed = probe_python(hint)
+        if probed is not None and probed.is_usable():
+            return probed
+    return require_base_python()
 
 
 def _stream_cmd(
@@ -146,6 +158,8 @@ def build_plan(
 ) -> tuple[SetupPlan, Recommendations]:
     profile = probe_system()
     rec = recommend(profile)
+    settings = load_settings()
+    base = resolve_base_python(settings.base_python)
     venv_dir = managed_venv_dir()
     py = managed_python(venv_dir)
     binary = find_ollama_binary()
@@ -160,7 +174,7 @@ def build_plan(
         SetupPlan(
             venv_dir=venv_dir,
             python_exe=py,
-            base_python=sys.executable,
+            base_python=str(base.executable),
             torch_pip_args=list(rec.torch_pip_args),
             iqa_device=rec.iqa_device,
             vision_model=model,
@@ -176,7 +190,12 @@ def build_plan(
     )
 
 
-def ensure_venv(*, force_recreate: bool = False, dry_run: bool = False) -> Path:
+def ensure_venv(
+    *,
+    base_python: str | Path | None = None,
+    force_recreate: bool = False,
+    dry_run: bool = False,
+) -> Path:
     reporter = get_reporter()
     venv_dir = managed_venv_dir()
     py = managed_python(venv_dir)
@@ -186,15 +205,25 @@ def ensure_venv(*, force_recreate: bool = False, dry_run: bool = False) -> Path:
         reporter.stage_done("setup_venv", ok=1, message="dry-run")
         return py
 
+    base = resolve_base_python(str(base_python) if base_python else None)
     if force_recreate and venv_dir.exists():
         reporter.log("setup_venv", f"removing existing venv {venv_dir}")
         shutil.rmtree(venv_dir, ignore_errors=True)
 
     if not py.is_file():
-        reporter.log("setup_venv", f"creating venv with {sys.executable}")
+        reporter.log(
+            "setup_venv",
+            f"creating venv with {base.executable} ({base.version_str})",
+        )
         venv_dir.parent.mkdir(parents=True, exist_ok=True)
-        builder = venv.EnvBuilder(with_pip=True, clear=False)
-        builder.create(str(venv_dir))
+        # Always create via an external interpreter — never the frozen exe.
+        code = _stream_cmd(
+            [str(base.executable), "-m", "venv", str(venv_dir)],
+            stage="setup_venv",
+            timeout=300,
+        )
+        if code != 0:
+            raise RuntimeError(f"venv create failed with exit {code}")
         if not py.is_file():
             raise RuntimeError(f"venv created but python missing: {py}")
 
@@ -403,6 +432,9 @@ def apply_setup_settings(plan: SetupPlan, *, dry_run: bool = False) -> Path:
     settings.qrealign_variant = plan.qrealign_variant
     settings.vision_model = plan.vision_model
     settings.pipeline_python = str(plan.python_exe)
+    settings.base_python = str(plan.base_python)
+    if not (settings.data_dir or "").strip():
+        settings.data_dir = str(default_data_dir_for_new_install())
     save_settings(settings, path)
     config.reload()
     reporter.stage_done("setup_settings", ok=1, message=f"wrote {path}")
@@ -462,8 +494,11 @@ def run_setup(
     confirm(prompt) -> bool used when yes is False.
     """
     reporter = get_reporter()
-    if sys.version_info < (3, 11) or sys.maxsize <= 2**32:
-        raise RuntimeError("Setup requires 64-bit Python 3.11+")
+    # Validate base Python early (frozen GUI may not be a usable interpreter).
+    try:
+        require_base_python()
+    except RuntimeError:
+        raise
 
     plan, _rec = build_plan(
         skip_ollama=skip_ollama,
@@ -495,7 +530,11 @@ def run_setup(
         if not fn("Proceed with setup? [y/N] "):
             raise RuntimeError("Setup cancelled (pass --yes to skip prompt)")
 
-    ensure_venv(force_recreate=force_recreate_venv, dry_run=dry_run)
+    ensure_venv(
+        base_python=plan.base_python,
+        force_recreate=force_recreate_venv,
+        dry_run=dry_run,
+    )
     # Refresh python path after create
     plan.python_exe = managed_python(plan.venv_dir)
     install_python_packages(plan, dry_run=dry_run)

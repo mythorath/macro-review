@@ -60,6 +60,36 @@ python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_
 
 ## Quick start
 
+### Portable Windows build (recommended for testers)
+
+1. Download the latest **Preview** build from [GitHub Releases](https://github.com/mythorath/macro-review/releases/tag/preview) (rolling) or a **Stable** `vX.Y.Z` release when published.
+2. Verify the ZIP checksum against the matching `.sha256` file.
+3. Extract the folder anywhere and run `MacroReview.exe`.
+4. Install **64-bit Python 3.11+** from [python.org](https://www.python.org/downloads/) if Setup reports it missing (required to create the managed ML venv).
+5. In the app: **Setup → Run setup**, then use **Library** to score a folder.
+
+Notes:
+
+- Settings, SQLite cache, and the managed venv live under `%LOCALAPPDATA%\MacroReview` and survive replacing the portable folder with a newer build.
+- Preview/stable builds are **unsigned** for now — Windows SmartScreen may warn; choose **More info → Run anyway**. Enterprise policies may block unsigned apps entirely.
+- In-app updates are notification-only (Settings → Check for updates / status bar). The app never downloads or replaces itself automatically.
+- There is no installer yet: quit the app, extract the newer ZIP, and replace the old portable folder to upgrade.
+
+Release channels:
+
+- **Preview**: rebuilt from `main` only after Windows tests, source smoke tests, packaging, and packaged smoke tests pass. The rolling `preview` release is replaced by each successful deployment.
+- **Stable**: immutable `vX.Y.Z` releases promoted from an already-tested commit.
+- CI artifacts are also retained for successful pull-request and `main` builds.
+
+Packaged diagnostics:
+
+```powershell
+.\MacroReview.exe --version
+.\MacroReview.exe --smoke-test
+```
+
+### From source
+
 1. **Desktop GUI** (setup wizard + Library run + settings):
 
 ```powershell
@@ -106,6 +136,18 @@ Machine-readable progress for tools/GUI (JSON Lines on stdout):
 python main.py run --dir "C:\path\to\folder" --progress jsonl
 # or: $env:MACROREVIEW_PROGRESS = "jsonl"
 ```
+
+### Building a portable ZIP locally
+
+```powershell
+pip install -r requirements-gui.txt
+pip install -r packaging/requirements-build.txt
+./packaging/build.ps1 -Channel preview
+```
+
+Outputs land in `dist/` (`MacroReview-…-win64.zip`, `.sha256`, `.manifest.json`). See [`packaging/RELEASE_CHECKLIST.md`](packaging/RELEASE_CHECKLIST.md) for clean-VM validation before tagging a stable release.
+
+GitHub Actions runs the same build on Windows. Successful pushes to `main` update the rolling Preview release; pushing a matching `vX.Y.Z` tag creates an immutable Stable release. `version_info.APP_VERSION` must match the stable tag.
 
 ---
 
@@ -293,15 +335,23 @@ crop_export.py       Crop writer
 image_io.py          Shared full-res / RAW loader
 gui_build_roadmap.md Desktop GUI phase plan
 gui/                 PySide6 shell (`python -m gui`; Results gallery under gui/results/)
-requirements-gui.txt PySide6 for the desktop UI (no WebEngine)
+packaging/           PyInstaller spec, build.ps1, release checklist
+tests/               Distribution / path / version unit tests
+requirements-gui.txt Lightweight GUI/bootstrap runtime dependencies (no ML stack/WebEngine)
+requirements-dev.txt pytest for CI
 setup_gpu.md         CUDA / CPU / AMD guidance + doctor
+paths.py             Frozen-aware install / pipeline / resource roots
+version_info.py      App semver + build_info.json reader
+bootstrap.py         Frozen `--bootstrap doctor|setup` entry
+python_discover.py   Locate 64-bit system Python 3.11+ for managed venv
 ```
 
 ---
 
 ## Tips
 
-- **GUI**: `pip install -r requirements-gui.txt` then `python -m gui` (Setup, Library run, native Results gallery, Settings).
+- **Portable build**: Download Preview/Stable from GitHub Releases, extract, run `MacroReview.exe`. Requires system Python 3.11+ for Setup.
+- **GUI (from source)**: `pip install -r requirements-gui.txt` then `python -m gui` (Setup, Library run, native Results gallery, Settings).
 - **Doctor**: Run `python main.py doctor` (current Python) or `doctor --pipeline` (managed venv from `setup`).
 - **Setup**: Prefer `python main.py setup --yes` over hand-installing CUDA torch; use `--skip-ollama` / `--skip-model` when those are already fine.
 - **Resume**: Re-run the same `run` / stage command; pending work continues. Avoid `--force` and `--limit` when picking up mid-batch.
@@ -310,6 +360,7 @@ setup_gpu.md         CUDA / CPU / AMD guidance + doctor
 - **NAS / OneDrive**: Preview + ROI read originals; cloud-only placeholders may fail and are logged/skipped.
 - **CR3 + DNG pairs**: Same stem are linked in dedupe groups so you don’t double-count.
 - **Calibration**: After reviewing the gallery, tweak blend weights rather than re-running models — `rank --force` is seconds.
+- **Updates**: In-app checks open the GitHub release page only; replace the portable folder manually. AppData settings/venv persist.
 
 ---
 

@@ -11,6 +11,8 @@ from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, Signal
 
 from gui import REPO_ROOT
 from gui.pipeline_exe import managed_python
+from paths import is_frozen
+from python_discover import discover_base_python, probe_python
 
 
 class CliWorker(QObject):
@@ -38,7 +40,7 @@ class CliWorker(QObject):
         args = ["doctor", "--json"]
         if pipeline:
             args.append("--pipeline")
-        self._start(args, json_mode=True, executable=sys.executable)
+        self._start_control(args, json_mode=True)
 
     def run_setup(
         self,
@@ -54,7 +56,7 @@ class CliWorker(QObject):
             args.append("--skip-model")
         if force_recreate:
             args.append("--force-recreate-venv")
-        self._start(args, json_mode=False, executable=sys.executable)
+        self._start_control(args, json_mode=False)
 
     def run_pipeline(
         self,
@@ -79,7 +81,7 @@ class CliWorker(QObject):
             args.extend(["--limit", str(int(limit))])
         if force:
             args.append("--force")
-        self._start(args, json_mode=False, executable=str(exe))
+        self._start_pipeline(args, executable=str(exe))
 
     def run_crop_export(
         self,
@@ -106,25 +108,72 @@ class CliWorker(QObject):
             args.extend(["--threshold", str(float(threshold))])
         if limit is not None and limit > 0:
             args.extend(["--limit", str(int(limit))])
-        self._start(args, json_mode=False, executable=str(exe))
+        self._start_pipeline(args, executable=str(exe))
 
-    def _start(self, args: list[str], *, json_mode: bool, executable: str) -> None:
+    def _start_control(self, args: list[str], *, json_mode: bool) -> None:
+        """Run doctor/setup via source Python or frozen --bootstrap."""
+        if is_frozen():
+            # MacroReview.exe --bootstrap doctor|setup …
+            self._start(
+                program=sys.executable,
+                arguments=["--bootstrap", *args],
+                json_mode=json_mode,
+                cwd=str(REPO_ROOT),
+            )
+            return
+
+        # Development: prefer current interpreter; fall back to discovered base.
+        exe = sys.executable
+        candidate = discover_base_python()
+        if candidate is not None:
+            # Keep current interpreter when it is already usable.
+            probed = probe_python(exe)
+            if probed is None or not probed.is_usable():
+                exe = str(candidate.executable)
+
+        main_py = REPO_ROOT / "main.py"
+        if not main_py.is_file():
+            self.failed.emit(f"main.py not found at {main_py}")
+            return
+        self._start(
+            program=exe,
+            arguments=[str(main_py), *args],
+            json_mode=json_mode,
+            cwd=str(REPO_ROOT),
+        )
+
+    def _start_pipeline(self, args: list[str], *, executable: str) -> None:
+        main_py = REPO_ROOT / "main.py"
+        if not main_py.is_file():
+            self.failed.emit(f"main.py not found at {main_py}")
+            return
+        self._start(
+            program=executable,
+            arguments=[str(main_py), *args],
+            json_mode=False,
+            cwd=str(REPO_ROOT),
+        )
+
+    def _start(
+        self,
+        *,
+        program: str,
+        arguments: list[str],
+        json_mode: bool,
+        cwd: str,
+    ) -> None:
         if self.busy:
             self.failed.emit("Another command is already running.")
             return
 
         self._json_mode = json_mode
         self._stdout_buf = ""
-        main_py = REPO_ROOT / "main.py"
-        if not main_py.is_file():
-            self.failed.emit(f"main.py not found at {main_py}")
-            return
 
         proc = QProcess(self)
         self._process = proc
-        proc.setProgram(executable)
-        proc.setArguments([str(main_py), *args])
-        proc.setWorkingDirectory(str(REPO_ROOT))
+        proc.setProgram(program)
+        proc.setArguments(arguments)
+        proc.setWorkingDirectory(cwd)
         env = QProcessEnvironment.systemEnvironment()
         if not json_mode:
             env.insert("MACROREVIEW_PROGRESS", "jsonl")

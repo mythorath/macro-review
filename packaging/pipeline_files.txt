@@ -1,0 +1,25 @@
+# Modules copied next to MacroReview.exe under pipeline/ for managed-venv execution.
+analyze.py
+bootstrap.py
+config.py
+crop_export.py
+db.py
+dedupe.py
+hardware.py
+heuristics.py
+image_io.py
+indexer.py
+iqa.py
+main.py
+paths.py
+previews.py
+progress.py
+python_discover.py
+rank.py
+report.py
+roi_sharpness.py
+settings.py
+setup_env.py
+version_info.py
+vision_backend.py
+requirements.txt

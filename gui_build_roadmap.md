@@ -97,8 +97,11 @@ PyTorch on Windows officially ships **CUDA (NVIDIA) or CPU** wheels only — the
    - Reads scored rows via `report.load_scored_rows`; crop-export via managed `pipeline_python`
    - No WebEngine — `report.html` remains available as a secondary open action
 
-7. **Phase 6 — Packaging & distribution**
-   PyInstaller build for the GUI app (kept lightweight since ML deps live in the managed venv, not the bundle), installer (Inno Setup/MSI), first-run experience validated on a clean Windows VM with no dev tools, update strategy.
+7. **Phase 6 — Packaging & distribution** — **IN PROGRESS (portable milestone)**
+   - PyInstaller one-folder portable ZIP via [`packaging/build.ps1`](packaging/build.ps1)
+   - Rolling GitHub `preview` prerelease from `main`; immutable `vX.Y.Z` stable releases
+   - Notification-only in-app update checks (opens GitHub release page)
+   - Deferred: Inno Setup/MSIX installer, automatic self-update, mandatory code signing
 
 8. **Phase 7 — Polish & expansion hooks**
    Crash-safe logs surfaced in-app, exportable diagnostics bundle for support requests, structure that lets new IQA metrics/backends/models be added without UI changes, multi-library support, and explicit notes on what would be needed for macOS/Linux later (kept out of scope now, but detection module stays OS-isolated so it's not precluded).
